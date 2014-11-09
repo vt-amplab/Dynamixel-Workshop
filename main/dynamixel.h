@@ -1,15 +1,15 @@
 #include <stdint.h>
-
+#include "Arduino.h"
 
 #define MEGABIT 1000000
 
 // Subroutines
-#define DXL_MAKEWORD(a, b)      ((unsigned short)(((unsigned char)(((unsigned long)(a)) & 0xff)) | ((unsigned short)((unsigned char)(((unsigned long)(b)) & 0xff))) << 8))
-#define DXL_MAKEDWORD(a, b)     ((unsigned int)(((unsigned short)(((unsigned long)(a)) & 0xffff)) | ((unsigned int)((unsigned short)(((unsigned long)(b)) & 0xffff))) << 16))
-#define DXL_LOWORD(l)           ((unsigned short)(((unsigned long)(l)) & 0xffff))
-#define DXL_HIWORD(l)           ((unsigned short)((((unsigned long)(l)) >> 16) & 0xffff))
-#define DXL_LOBYTE(w)           ((unsigned char)(((unsigned long)(w)) & 0xff))
-#define DXL_HIBYTE(w)           ((unsigned char)((((unsigned long)(w)) >> 8) & 0xff))
+#define DXL_MAKEWORD(a, b)      ( ( (a) & 0xff ) | (( (b) & 0xff  ) << 8 ))
+#define DXL_MAKEDWORD(a, b)     ( ( (a) & 0xffff ) | (( (b) & 0xffff ) << 16))
+#define DXL_LOWORD(l)           (( (l) & 0xffff))
+#define DXL_HIWORD(l)           ( ( (l) >> 16 ) & 0xffff)
+#define DXL_LOBYTE(w)           ( (w) & 0xff )
+#define DXL_HIBYTE(w)           ( ((w) >> 8 ) & 0xff)
 
 // Calculate the CRC for a given packet
 unsigned short update_crc(unsigned short crc_accum, unsigned char *data_blk_ptr, unsigned short data_blk_size)
@@ -63,15 +63,17 @@ unsigned short update_crc(unsigned short crc_accum, unsigned char *data_blk_ptr,
 	return crc_accum;
 }
 
-int sendPacket(int ID, int Address, int value)
+void sendPacket(uint8_t ID, uint16_t Address, uint16_t value)
 {
   int cont, wchecksum, wpacklen;
 
   uint8_t txbuffer[255];
   uint8_t param[4] = {0,0,0,0};
 
-  param[0]	= (unsigned char)DXL_LOBYTE(Address);
-  param[1]	= (unsigned char)DXL_HIBYTE(Address);
+  param[0]	= (uint8_t)DXL_LOBYTE(Address);
+  param[1]	= (uint8_t)DXL_HIBYTE(Address);
+  
+  
   //insert data to parameter bucket
   param[2]	= DXL_LOBYTE(value);
   param[3]	= DXL_HIBYTE(value);
@@ -87,6 +89,7 @@ int sendPacket(int ID, int Address, int value)
   txbuffer[5] = DXL_LOBYTE(4+3);
   txbuffer[6] = DXL_HIBYTE(4+3);
 
+  // Data write instruction
   txbuffer[7] = 0x03;
 
   // Write in data of packet
@@ -99,7 +102,7 @@ int sendPacket(int ID, int Address, int value)
   wchecksum = 0;
   wpacklen = DXL_MAKEWORD(txbuffer[5], txbuffer[6])+5;
   if(wpacklen > sizeof(txbuffer)){
-        return 0;
+        return;
   }
   // Calculate CRC
   wchecksum = update_crc(0, txbuffer, wpacklen);
@@ -114,5 +117,61 @@ int sendPacket(int ID, int Address, int value)
   for(cont = 0; cont < wpacklen; cont++)
   {
        Serial.write(txbuffer[cont]);
+  }
+}
+
+void sendPacketByte(int ID, int Address, uint8_t value)
+{
+  int count, wchecksum, wpacklen;
+
+  uint8_t txbuffer[255];
+  uint8_t param[3] = {0,0,0};
+
+  param[0]	= (uint8_t)DXL_LOBYTE(Address);
+  param[1]	= (uint8_t)DXL_HIBYTE(Address);
+  
+  
+  //insert data to parameter bucket
+  param[2]	= value;
+
+  // Write header
+  txbuffer[0] = 0xff;
+  txbuffer[1] = 0xff;
+  txbuffer[2] = 0xfd;
+  txbuffer[3] = 0x00;
+
+  // Set ID and length of packet
+  txbuffer[4] = ID;
+  txbuffer[5] = DXL_LOBYTE(3+3);
+  txbuffer[6] = DXL_HIBYTE(3+3);
+
+  // Data write instruction
+  txbuffer[7] = 0x03;
+
+  // Write in data of packet
+  for(count = 0; count < 3; count++)
+  {
+     txbuffer[count+8] = param[count];
+  }
+
+  // Check length of whole packet
+  wchecksum = 0;
+  wpacklen = DXL_MAKEWORD(txbuffer[5], txbuffer[6])+5;
+  if(wpacklen > sizeof(txbuffer)){
+        return;
+  }
+  // Calculate CRC
+  wchecksum = update_crc(0, txbuffer, wpacklen);
+  txbuffer[wpacklen] = DXL_LOBYTE(wchecksum);
+  txbuffer[wpacklen+1] = DXL_HIBYTE(wchecksum);
+
+  // Add length of CRC (2 bytes)
+  wpacklen += 2;
+
+
+  // Write packet to serial
+  for(count = 0; count < wpacklen; count++)
+  {
+       Serial.write(txbuffer[count]);
   }
 }
